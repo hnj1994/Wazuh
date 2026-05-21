@@ -1,0 +1,37 @@
+FROM node:22-alpine AS builder
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
+
+COPY . .
+
+ARG VITE_APP_NAME="Helios AI SOC"
+ARG VITE_USE_MOCKS=true
+ARG VITE_WAZUH_PROXY_PATH=/api/wazuh
+ARG VITE_OPENSEARCH_PROXY_PATH=/api/opensearch
+ARG VITE_OLLAMA_PROXY_PATH=/api/ollama
+ARG VITE_WAZUH_WS_URL=/ws/alerts
+ARG VITE_OLLAMA_MODEL=llama3.1:8b
+ARG VITE_DEFAULT_TENANT=apex
+
+ENV VITE_APP_NAME=$VITE_APP_NAME
+ENV VITE_USE_MOCKS=$VITE_USE_MOCKS
+ENV VITE_WAZUH_PROXY_PATH=$VITE_WAZUH_PROXY_PATH
+ENV VITE_OPENSEARCH_PROXY_PATH=$VITE_OPENSEARCH_PROXY_PATH
+ENV VITE_OLLAMA_PROXY_PATH=$VITE_OLLAMA_PROXY_PATH
+ENV VITE_WAZUH_WS_URL=$VITE_WAZUH_WS_URL
+ENV VITE_OLLAMA_MODEL=$VITE_OLLAMA_MODEL
+ENV VITE_DEFAULT_TENANT=$VITE_DEFAULT_TENANT
+
+RUN npm run build
+
+FROM nginx:1.27-alpine
+
+ENV SOC_API_UPSTREAM=http://soc-api:8080
+
+COPY nginx.conf.template /etc/nginx/templates/default.conf.template
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+EXPOSE 80

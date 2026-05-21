@@ -1,0 +1,18 @@
+services:
+  helios-soc:
+    build:
+      context: .
+      args:
+        VITE_APP_NAME: ${VITE_APP_NAME:-Helios AI SOC}
+        VITE_USE_MOCKS: ${VITE_USE_MOCKS:-true}
+        VITE_WAZUH_PROXY_PATH: ${VITE_WAZUH_PROXY_PATH:-/api/wazuh}
+        VITE_OPENSEARCH_PROXY_PATH: ${VITE_OPENSEARCH_PROXY_PATH:-/api/opensearch}
+        VITE_OLLAMA_PROXY_PATH: ${VITE_OLLAMA_PROXY_PATH:-/api/ollama}
+        VITE_WAZUH_WS_URL: ${VITE_WAZUH_WS_URL:-/ws/alerts}
+        VITE_OLLAMA_MODEL: ${VITE_OLLAMA_MODEL:-llama3.1:8b}
+        VITE_DEFAULT_TENANT: ${VITE_DEFAULT_TENANT:-apex}
+    ports:
+      - "${HELIOS_SOC_PORT:-8080}:80"
+    environment:
+      SOC_API_UPSTREAM: ${SOC_API_UPSTREAM:-http://host.docker.internal:8081}
+    restart: unless-stopped
