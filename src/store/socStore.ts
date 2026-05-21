@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { socApi } from "@/services/socApi";
+import { useAuthStore } from "@/store/authStore";
 import type {
   Agent,
   Alert,
@@ -97,14 +98,16 @@ export const useSocStore = create<SocState>((set, get) => ({
       set({ selectedAlert: existing });
       return existing;
     }
-    const alert = await socApi.getAlert(alertId);
+    const { session } = useAuthStore.getState();
+    const alert = await socApi.getAlert(alertId, session?.token);
     set({ selectedAlert: alert });
     return alert;
   },
 
   async runHunt(query, tenantId) {
     set({ loading: true });
-    const results = await socApi.runHunt(query, tenantId);
+    const { session } = useAuthStore.getState();
+    const results = await socApi.runHunt(query, tenantId, session?.token);
     set({ huntResults: results, loading: false });
   },
 

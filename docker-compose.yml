@@ -3,16 +3,40 @@ services:
     build:
       context: .
       args:
-        VITE_APP_NAME: ${VITE_APP_NAME:-Helios AI SOC}
-        VITE_USE_MOCKS: ${VITE_USE_MOCKS:-true}
-        VITE_WAZUH_PROXY_PATH: ${VITE_WAZUH_PROXY_PATH:-/api/wazuh}
+        VITE_APP_NAME:              ${VITE_APP_NAME:-Helios AI SOC}
+        # Set VITE_USE_MOCKS=true in .env for demo mode, false for live integration
+        VITE_USE_MOCKS:             ${VITE_USE_MOCKS:-false}
+        VITE_WAZUH_PROXY_PATH:      ${VITE_WAZUH_PROXY_PATH:-/api/wazuh}
         VITE_OPENSEARCH_PROXY_PATH: ${VITE_OPENSEARCH_PROXY_PATH:-/api/opensearch}
-        VITE_OLLAMA_PROXY_PATH: ${VITE_OLLAMA_PROXY_PATH:-/api/ollama}
-        VITE_WAZUH_WS_URL: ${VITE_WAZUH_WS_URL:-/ws/alerts}
-        VITE_OLLAMA_MODEL: ${VITE_OLLAMA_MODEL:-llama3.1:8b}
-        VITE_DEFAULT_TENANT: ${VITE_DEFAULT_TENANT:-apex}
+        VITE_OLLAMA_PROXY_PATH:     ${VITE_OLLAMA_PROXY_PATH:-/api/ollama}
+        # Leave VITE_WAZUH_WS_URL empty to use the in-browser demo alert stream
+        VITE_WAZUH_WS_URL:          ${VITE_WAZUH_WS_URL:-}
+        VITE_OLLAMA_MODEL:          ${VITE_OLLAMA_MODEL:-llama3.1:8b}
+        VITE_DEFAULT_TENANT:        ${VITE_DEFAULT_TENANT:-apex}
     ports:
       - "${HELIOS_SOC_PORT:-8080}:80"
     environment:
-      SOC_API_UPSTREAM: ${SOC_API_UPSTREAM:-http://host.docker.internal:8081}
+      # WebSocket / future BFF upstream
+      SOC_API_UPSTREAM:      ${SOC_API_UPSTREAM:-http://host.docker.internal:3001}
+      # Backend service URLs (container → host VM services)
+      WAZUH_BASE_URL:        ${WAZUH_BASE_URL:-https://host.docker.internal:55000}
+      OPENSEARCH_BASE_URL:   ${OPENSEARCH_BASE_URL:-https://host.docker.internal:9200}
+      OLLAMA_BASE_URL:       ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      # OpenSearch credentials injected by nginx (base64 of user:password)
+      # Generate: echo -n "admin:YourPassword" | base64
+      OPENSEARCH_BASIC_AUTH: ${OPENSEARCH_BASIC_AUTH:-YWRtaW46YWRtaW4=}
+    # Makes host.docker.internal resolve to the Docker host on Linux
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
     restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

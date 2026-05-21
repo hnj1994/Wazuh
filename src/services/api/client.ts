@@ -23,29 +23,55 @@ export class ApiError extends Error {
 
 interface ApiRequestOptions extends RequestInit {
   token?: string;
+  /**
+   * Maximum retry attempts on network errors or 5xx responses.
+   * Client errors (4xx) are never retried.  Default: 1.
+   */
+  retries?: number;
+  /** Request timeout in milliseconds.  Default: 30 000. */
+  timeoutMs?: number;
 }
 
 export async function apiRequest<T>(url: string, options: ApiRequestOptions = {}): Promise<T> {
-  const headers = new Headers(options.headers);
+  const { token, retries = 1, timeoutMs = 30_000, ...fetchOptions } = options;
+
+  const headers = new Headers(fetchOptions.headers);
   headers.set("Accept", "application/json");
-  if (options.body && !headers.has("Content-Type")) {
+  if (fetchOptions.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
-  if (options.token) {
-    headers.set("Authorization", `Bearer ${options.token}`);
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
   }
 
-  const response = await fetch(url, {
-    ...options,
-    headers
-  });
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
 
-  const contentType = response.headers.get("content-type");
-  const payload = contentType?.includes("application/json") ? await response.json() : await response.text();
+  try {
+    const response = await fetch(url, { ...fetchOptions, headers, signal: controller.signal });
+    window.clearTimeout(timeoutId);
 
-  if (!response.ok) {
-    throw new ApiError(`Request failed: ${response.status}`, response.status, payload);
+    const contentType = response.headers.get("content-type");
+    const payload = contentType?.includes("application/json")
+      ? await response.json()
+      : await response.text();
+
+    if (!response.ok) {
+      throw new ApiError(`Request failed: ${response.status}`, response.status, payload);
+    }
+
+    return payload as T;
+  } catch (err) {
+    window.clearTimeout(timeoutId);
+
+    // Retry on network / timeout errors or server errors (5xx), not on 4xx.
+    const isRetryable = !(err instanceof ApiError) || err.status >= 500;
+
+    if (retries > 0 && isRetryable) {
+      await new Promise((resolve) => window.setTimeout(resolve, 500));
+      return apiRequest<T>(url, { ...options, retries: retries - 1 });
+    }
+
+    throw err;
   }
-
-  return payload as T;
 }

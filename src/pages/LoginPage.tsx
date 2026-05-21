@@ -120,9 +120,15 @@ export function LoginPage() {
                   {loading ? "Signing in..." : "Enter SOC"}
                 </Button>
               </form>
-              <div className="mt-5 rounded-md border bg-muted/40 p-3 text-xs text-muted-foreground">
-                Demo users: admin@soc.local / admin123, analyst@soc.local / analyst123, viewer@soc.local / viewer123
-              </div>
+              {runtimeConfig.useMocks ? (
+                <div className="mt-5 rounded-md border bg-muted/40 p-3 text-xs text-muted-foreground">
+                  Demo users: admin@soc.local / admin123, analyst@soc.local / analyst123, viewer@soc.local / viewer123
+                </div>
+              ) : (
+                <p className="mt-5 text-center text-xs text-muted-foreground">
+                  Sign in with your Wazuh credentials.
+                </p>
+              )}
             </CardContent>
           </Card>
         </section>

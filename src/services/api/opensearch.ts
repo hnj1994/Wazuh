@@ -1,5 +1,5 @@
 import { apiRequest, runtimeConfig } from "@/services/api/client";
-import type { Alert, AlertSeverity, ChartPoint, SearchFilters } from "@/types";
+import type { Alert, AlertSeverity, ChartPoint, HuntResult, SearchFilters } from "@/types";
 
 interface OpenSearchHit<T> {
   _id: string;
@@ -165,4 +165,64 @@ export function summarizeSeverity(alerts: Alert[]): ChartPoint[] {
     name: severity[0].toUpperCase() + severity.slice(1),
     value: alerts.filter((alert) => alert.severity === severity).length
   }));
+}
+
+/** Fetch a single Wazuh alert from OpenSearch by its document _id. */
+export async function getAlertById(alertId: string, token?: string): Promise<Alert | undefined> {
+  try {
+    const payload = await apiRequest<OpenSearchResponse<WazuhAlertSource>>(
+      `${runtimeConfig.opensearchProxyPath}/wazuh-alerts-*/_search`,
+      {
+        method: "POST",
+        token,
+        body: JSON.stringify({ size: 1, query: { ids: { values: [alertId] } } })
+      }
+    );
+    const hit = payload.hits?.hits?.[0];
+    return hit ? normalizeWazuhAlert(hit._id, "", hit._source) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Run a free-text hunt against the Wazuh alerts index using a Lucene query
+ * string.  Returns the 100 most-recent matching events from the last 24 h.
+ */
+export async function runOpenSearchHunt(query: string, token?: string): Promise<HuntResult[]> {
+  const dsl = {
+    size: 100,
+    sort: [{ "@timestamp": { order: "desc" } }],
+    query: {
+      bool: {
+        must: query
+          ? [{ query_string: { query, default_operator: "AND", lenient: true } }]
+          : [{ match_all: {} }],
+        filter: [{ range: { "@timestamp": { gte: "now-24h", lte: "now" } } }]
+      }
+    }
+  };
+
+  const payload = await apiRequest<OpenSearchResponse<WazuhAlertSource>>(
+    `${runtimeConfig.opensearchProxyPath}/wazuh-alerts-*/_search`,
+    { method: "POST", token, body: JSON.stringify(dsl) }
+  );
+
+  return (payload.hits?.hits ?? []).map((hit) => {
+    const src = hit._source;
+    const level = src.rule?.level ?? 0;
+    const severity: AlertSeverity =
+      level >= 14 ? "critical" : level >= 11 ? "high" : level >= 7 ? "medium" : level >= 3 ? "low" : "informational";
+    return {
+      id: hit._id,
+      timestamp: src["@timestamp"] ?? src.timestamp ?? new Date().toISOString(),
+      host: src.agent?.name ?? "unknown",
+      user: String(src.data?.srcuser ?? src.data?.user ?? ""),
+      eventType: src.decoder?.name ?? "wazuh",
+      severity,
+      message: src.rule?.description ?? "Wazuh event",
+      source: src.location ?? "wazuh-alerts",
+      mitre: src.rule?.mitre?.id?.[0]
+    };
+  });
 }

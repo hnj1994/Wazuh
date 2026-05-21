@@ -10,9 +10,10 @@ import {
 import { runtimeConfig } from "@/services/api/client";
 import { mockApi } from "@/services/api/mock";
 import { chatWithOllama } from "@/services/api/ollama";
-import { searchOpenSearchAlerts, summarizeSeverity } from "@/services/api/opensearch";
+import { getAlertById, runOpenSearchHunt, searchOpenSearchAlerts, summarizeSeverity } from "@/services/api/opensearch";
 import { fetchWazuhAgents } from "@/services/api/wazuh";
 import { correlateAlerts } from "@/services/correlation/engine";
+import { translateNaturalLanguage } from "@/lib/queryLanguage";
 import type {
   Alert,
   ChatMessage,
@@ -84,8 +85,14 @@ export const socApi = {
     }
   },
 
-  async getAlert(alertId: string) {
-    return mockApi.getAlert(alertId);
+  async getAlert(alertId: string, token?: string) {
+    if (runtimeConfig.useMocks) return mockApi.getAlert(alertId);
+    try {
+      const alert = await getAlertById(alertId, token);
+      return alert ?? (await mockApi.getAlert(alertId));
+    } catch {
+      return mockApi.getAlert(alertId);
+    }
   },
 
   async getAgents(tenantId: string, token?: string) {
@@ -97,8 +104,17 @@ export const socApi = {
     }
   },
 
-  async runHunt(query: string, tenantId: string): Promise<HuntResult[]> {
-    return mockApi.runHunt(query, tenantId);
+  async runHunt(query: string, tenantId: string, token?: string): Promise<HuntResult[]> {
+    if (runtimeConfig.useMocks) return mockApi.runHunt(query, tenantId);
+    try {
+      const translated = translateNaturalLanguage(query);
+      const luceneQuery = translated.query || query;
+      const results = await runOpenSearchHunt(luceneQuery, token);
+      // Fall back to mock results if OpenSearch returns nothing
+      return results.length > 0 ? results : mockApi.runHunt(query, tenantId);
+    } catch {
+      return mockApi.runHunt(query, tenantId);
+    }
   },
 
   async getHuntQueries() {
